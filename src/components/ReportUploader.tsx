@@ -35,8 +35,6 @@ export default function ReportUploader({ onUploaded, userId }: Props) {
       return;
     }
 
-    const { data: urlData } = supabase.storage.from("medical-reports").getPublicUrl(path);
-
     // Create report record
     const { data: report, error: insertError } = await supabase.from("reports").insert({
       user_id: userId,
@@ -44,6 +42,7 @@ export default function ReportUploader({ onUploaded, userId }: Props) {
       file_url: path,
       file_type: file.type,
       status: "analyzing",
+      report_type: "general",
     }).select().single();
 
     if (insertError) {
@@ -87,6 +86,9 @@ export default function ReportUploader({ onUploaded, userId }: Props) {
       <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
         <Upload className="h-5 w-5 text-primary" /> Upload Medical Report
       </h2>
+      <p className="text-sm text-muted-foreground mb-4">
+        Upload any medical document — blood report, prescription, ultrasound/X-ray, or discharge summary. We'll detect the type automatically.
+      </p>
       <div
         className="border-2 border-dashed rounded-xl p-8 text-center bg-card hover:border-primary/50 transition-colors cursor-pointer"
         onDragOver={e => e.preventDefault()}
@@ -116,7 +118,7 @@ export default function ReportUploader({ onUploaded, userId }: Props) {
                 disabled={uploading || analyzing}
               >
                 {(uploading || analyzing) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {analyzing ? "Analyzing..." : uploading ? "Uploading..." : "Analyze Report"}
+                {analyzing ? "Analyzing..." : uploading ? "Uploading..." : "Upload Medical Report"}
               </Button>
             </div>
           </div>
@@ -124,7 +126,7 @@ export default function ReportUploader({ onUploaded, userId }: Props) {
           <div>
             <Upload className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
             <p className="font-medium">Drop your report here or click to browse</p>
-            <p className="text-sm text-muted-foreground mt-1">Supports PDF, PNG, JPG</p>
+            <p className="text-sm text-muted-foreground mt-1">Supports PDF, PNG, JPG — Blood reports, prescriptions, X-rays, discharge summaries</p>
           </div>
         )}
       </div>
