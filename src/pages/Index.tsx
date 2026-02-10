@@ -1,15 +1,16 @@
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { FileText, Shield, Brain, Stethoscope, ArrowRight, Upload, MessageSquare, Languages } from "lucide-react";
+import { FileText, Shield, Brain, Stethoscope, ArrowRight, Upload, MessageSquare, Languages, Activity, Pill } from "lucide-react";
+import Disclaimer from "@/components/Disclaimer";
 
 const features = [
-  { icon: Upload, title: "Upload Reports", desc: "PDF, images, or scanned prescriptions" },
-  { icon: Brain, title: "AI Analysis", desc: "Instant plain-language explanations" },
-  { icon: Shield, title: "Risk Assessment", desc: "Visual risk level classification" },
-  { icon: MessageSquare, title: "Doctor Questions", desc: "Smart questions to ask your doctor" },
-  { icon: FileText, title: "Medicine Info", desc: "Purpose, usage & side effects" },
-  { icon: Languages, title: "Voice Support", desc: "Text-to-speech for explanations" },
+  { icon: Upload, title: "One-Click Upload", desc: "Upload any medical document — blood reports, prescriptions, X-rays, or discharge summaries" },
+  { icon: Brain, title: "AI Analysis", desc: "Automatic report type detection and instant plain-language explanations" },
+  { icon: Shield, title: "Risk Assessment", desc: "Visual risk level classification with emergency warnings" },
+  { icon: Pill, title: "Medicine Info", desc: "Purpose, dosage instructions, side effects & safety warnings" },
+  { icon: Activity, title: "Health Trends", desc: "Track blood report values over time and see improvements" },
+  { icon: MessageSquare, title: "Doctor Questions", desc: "Smart questions to improve your next doctor visit" },
 ];
 
 const fadeUp = {
@@ -52,7 +53,7 @@ export default function Index() {
             className="text-lg text-muted-foreground max-w-2xl mx-auto mb-10"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
           >
-            Upload your lab reports, prescriptions, or scanned documents. Our AI converts complex medical language into clear, easy-to-understand explanations.
+            Upload your lab reports, prescriptions, or scanned documents. Our AI converts complex medical language into clear, easy-to-understand explanations — no doctor jargon.
           </motion.p>
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }}>
             <Link to="/auth?tab=signup">
@@ -92,13 +93,8 @@ export default function Index() {
 
       {/* Disclaimer */}
       <section className="py-12">
-        <div className="container max-w-3xl text-center">
-          <div className="bg-accent/50 rounded-xl p-6 border border-primary/10">
-            <Shield className="h-8 w-8 text-primary mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground">
-              <strong className="text-foreground">Disclaimer:</strong> This system does NOT provide medical diagnosis or treatment. Always consult a qualified medical professional for health decisions.
-            </p>
-          </div>
+        <div className="container max-w-3xl">
+          <Disclaimer />
         </div>
       </section>
 

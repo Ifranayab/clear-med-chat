@@ -30,21 +30,31 @@ serve(async (req) => {
 
     const isImage = fileType?.startsWith("image/");
 
-    const systemPrompt = `You are a medical report interpreter AI. Your job is to analyze medical reports and prescriptions and explain them in simple, easy-to-understand language for patients.
+    const systemPrompt = `You are a medical report interpreter AI. Analyze medical documents and explain them in simple, patient-friendly language.
 
-IMPORTANT RULES:
+STEP 1 - DETECT REPORT TYPE using these rules:
+- Blood Report: keywords like Hemoglobin, WBC, Platelet, SGPT, SGOT, RBC, CBC, LFT, KFT, Normal Range, Reference Range
+- Prescription: patterns like Tab, Cap, Syr, OD, BD, TDS, mg, ml, Rx
+- Ultrasound/X-Ray: keywords like USG, Ultrasound, X-ray, Findings, Impression, Grade, Sonography
+- Otherwise: Clinical/Discharge report
+
+STEP 2 - ANALYZE based on detected type and return structured data via the tool.
+
+RULES:
 - NEVER provide medical diagnosis or treatment advice
 - Always recommend consulting a doctor
 - Use simple, non-technical language
-- Be empathetic and reassuring in tone
+- Be empathetic and reassuring
 - Highlight abnormal values clearly
+- For prescriptions, explain how to take each medicine (morning/night, before/after food)
+- For imaging, explain findings in plain language
 
 You MUST respond using the suggest_analysis tool.`;
 
     const userContent: any[] = [
       {
         type: "text",
-        text: `Please analyze this medical document (${fileName}). Extract all test results, medicines, and provide a complete analysis.`
+        text: `Analyze this medical document (${fileName}). First detect the report type, then provide a complete analysis.`
       }
     ];
 
@@ -55,10 +65,9 @@ You MUST respond using the suggest_analysis tool.`;
         image_url: { url: `data:${mimeType};base64,${fileBase64}` }
       });
     } else {
-      // For PDFs, send as text instruction with base64
       userContent.push({
         type: "text",
-        text: `[This is a PDF document encoded in base64. Please extract and analyze the medical content.]\n\nBase64 content (first 50000 chars): ${fileBase64.substring(0, 50000)}`
+        text: `[PDF document base64 - first 50000 chars]: ${fileBase64.substring(0, 50000)}`
       });
     }
 
@@ -85,10 +94,18 @@ You MUST respond using the suggest_analysis tool.`;
               parameters: {
                 type: "object",
                 properties: {
-                  summary: { type: "string", description: "A one-paragraph simplified summary of the report in plain language" },
+                  detectedType: {
+                    type: "string",
+                    enum: ["blood", "prescription", "imaging", "general"],
+                    description: "The detected report type"
+                  },
+                  summary: { type: "string", description: "One-paragraph simplified summary in plain language" },
                   keyFindings: { type: "array", items: { type: "string" }, description: "3-6 bullet point key findings" },
-                  riskLevel: { type: "string", enum: ["low", "medium", "high"], description: "Overall risk classification" },
+                  keyTakeaways: { type: "array", items: { type: "string" }, description: "Key takeaways for clinical/discharge reports" },
+                  riskLevel: { type: "string", enum: ["low", "medium", "high"], description: "Risk level for blood reports" },
                   riskExplanation: { type: "string", description: "Brief explanation of the risk level" },
+                  severityLevel: { type: "string", enum: ["mild", "moderate", "severe"], description: "Severity for imaging reports" },
+                  severityExplanation: { type: "string", description: "Brief explanation of severity" },
                   testResults: {
                     type: "array",
                     items: {
@@ -99,10 +116,36 @@ You MUST respond using the suggest_analysis tool.`;
                         unit: { type: "string" },
                         referenceRange: { type: "string" },
                         abnormal: { type: "boolean" },
-                        explanation: { type: "string", description: "Simple explanation of what this test means" }
+                        explanation: { type: "string" }
                       },
                       required: ["name", "value", "abnormal", "explanation"]
-                    }
+                    },
+                    description: "For blood reports"
+                  },
+                  findings: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        finding: { type: "string" },
+                        explanation: { type: "string" },
+                        abnormal: { type: "boolean" }
+                      },
+                      required: ["finding", "explanation", "abnormal"]
+                    },
+                    description: "For imaging reports"
+                  },
+                  diagnosisTerms: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        term: { type: "string" },
+                        explanation: { type: "string" }
+                      },
+                      required: ["term", "explanation"]
+                    },
+                    description: "For clinical/discharge reports"
                   },
                   medicines: {
                     type: "array",
@@ -111,16 +154,17 @@ You MUST respond using the suggest_analysis tool.`;
                       properties: {
                         name: { type: "string" },
                         purpose: { type: "string" },
-                        usage: { type: "string" },
+                        usage: { type: "string", description: "How to take: morning/night, before/after food, dosage" },
                         sideEffects: { type: "string" },
                         warning: { type: "string" }
                       },
                       required: ["name", "purpose", "usage"]
                     }
                   },
-                  doctorQuestions: { type: "array", items: { type: "string" }, description: "4-5 questions patient should ask their doctor" }
+                  doctorQuestions: { type: "array", items: { type: "string" }, description: "4-5 questions to ask doctor" },
+                  emergencyWarning: { type: "string", description: "Emergency warning for critical values, if any" }
                 },
-                required: ["summary", "keyFindings", "riskLevel", "riskExplanation", "testResults", "medicines", "doctorQuestions"]
+                required: ["detectedType", "summary", "keyFindings", "medicines", "doctorQuestions"]
               }
             }
           }
@@ -153,10 +197,13 @@ You MUST respond using the suggest_analysis tool.`;
       throw new Error("Failed to parse AI response");
     }
 
-    // Update report with analysis
+    const detectedType = analysis.detectedType || "general";
+
+    // Update report with analysis and detected type
     const { error: updateError } = await supabase.from("reports").update({
       analysis,
-      status: "completed"
+      status: "completed",
+      report_type: detectedType,
     }).eq("id", reportId).eq("user_id", user.id);
 
     if (updateError) {
