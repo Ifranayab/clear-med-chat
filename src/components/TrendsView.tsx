@@ -52,7 +52,9 @@ export default function TrendsView({ reports }: { reports: Report[] }) {
       if (values.length < 2) return { name: test, trend: "stable", change: 0 };
       const last = values[values.length - 1];
       const prev = values[values.length - 2];
-      const change = ((last - prev) / prev) * 100;
+      // const change = ((last - prev) / prev) * 100;
+      const avg = values.reduce((a, b) => a + b, 0) / values.length;
+      const change = ((last - avg) / avg) * 100;
       return { name: test, trend: change > 5 ? "up" : change < -5 ? "down" : "stable", change: Math.round(change) };
     });
 
@@ -68,6 +70,20 @@ export default function TrendsView({ reports }: { reports: Report[] }) {
       </div>
     );
   }
+
+    const getStatus = (test: string, value: number) => {
+    const ranges: any = {
+      Hemoglobin: { min: 12, max: 16 },
+      WBC: { min: 4000, max: 11000 },
+    };
+
+    const range = ranges[test];
+    if (!range) return "normal";
+
+    if (value < range.min) return "low";
+    if (value > range.max) return "high";
+    return "normal";
+  };
 
   return (
     <div className="space-y-6">
