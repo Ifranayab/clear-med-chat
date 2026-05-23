@@ -1,9 +1,6 @@
-import { useMemo, useState } from "react";
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Legend, ReferenceLine
-} from "recharts";
-import { TrendingUp, TrendingDown, Minus, Activity, Filter } from "lucide-react";
+import { useMemo } from "react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { TrendingUp, TrendingDown, Minus, Activity } from "lucide-react";
 
 interface Report {
   id: string;
@@ -12,30 +9,10 @@ interface Report {
   created_at: string;
 }
 
-// Dynamically generate distinct HSL colors — no hardcoded list, no cap
-function generateColor(index: number): string {
-  const hues = [207, 122, 0, 45, 270, 180, 330, 30, 150, 300, 60, 240];
-  const hue = hues[index % hues.length];
-  const lightness = index < hues.length ? 45 : 35 + (index % 3) * 10;
-  return `hsl(${hue}, 65%, ${lightness}%)`;
-}
-
-// Trend threshold configurable (not a magic number buried in logic)
-const TREND_THRESHOLD_PCT = 5;
-
-// Normalise test names for grouping (e.g. "Hemoglobin (Hb)" → "Hemoglobin")
-function normaliseTestName(raw: string): string {
-  return raw.trim().replace(/\s*\(.*?\)/g, "").trim();
-}
-
-// Format date respecting user locale from the browser
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
+const TRACKED_TESTS = ["Hemoglobin", "WBC", "Platelet", "RBC", "SGPT", "SGOT", "Creatinine", "Blood Sugar", "Cholesterol"];
+const CHART_COLORS = ["hsl(207, 79%, 51%)", "hsl(122, 40%, 45%)", "hsl(0, 72%, 51%)", "hsl(45, 100%, 51%)", "hsl(270, 60%, 55%)", "hsl(180, 50%, 45%)"];
 
 export default function TrendsView({ reports }: { reports: Report[] }) {
-  const [selectedTests, setSelectedTests] = useState<Set<string> | null>(null); // null = all
-
   const bloodReports = useMemo(() =>
     reports
       .filter(r => r.report_type === "blood" && r.analysis?.testResults?.length > 0)
@@ -43,215 +20,116 @@ export default function TrendsView({ reports }: { reports: Report[] }) {
     [reports]
   );
 
-  const { chartData, availableTests, trends, referenceRanges } = useMemo(() => {
-    if (bloodReports.length < 1) {
-      return { chartData: [], availableTests: [] as string[], trends: [] as any[], referenceRanges: {} as Record<string, { min?: number; max?: number }> };
-    }
+  const { chartData, availableTests, trends } = useMemo(() => {
+    if (bloodReports.length < 1) return { chartData: [], availableTests: [] as string[], trends: [] as any[] };
 
-    // Collect all unique normalised test names across all reports
     const testSet = new Set<string>();
     bloodReports.forEach(r => {
       r.analysis.testResults.forEach((t: any) => {
-        const name = normaliseTestName(t.name ?? "");
-        if (name) testSet.add(name);
+        const name = t.name?.trim();
+        if (name && TRACKED_TESTS.some(tt => name.toLowerCase().includes(tt.toLowerCase()))) {
+          testSet.add(name);
+        }
       });
     });
 
-    const availableTests = Array.from(testSet); // no slice — all tests
+    const availableTests = Array.from(testSet).slice(0, 6);
 
-    // Build chart data points
     const chartData = bloodReports.map(r => {
-      const point: Record<string, any> = {
-        date: formatDate(r.created_at),
-        _rawDate: r.created_at,
-      };
+      const point: any = { date: new Date(r.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) };
       r.analysis.testResults.forEach((t: any) => {
-        const name = normaliseTestName(t.name ?? "");
-        if (availableTests.includes(name)) {
+        if (availableTests.includes(t.name?.trim())) {
           const val = parseFloat(t.value);
-          if (!isNaN(val)) point[name] = val;
+          if (!isNaN(val)) point[t.name.trim()] = val;
         }
       });
       return point;
     });
 
-    // Collect reference ranges (min/max) from the latest report that has them
-    const referenceRanges: Record<string, { min?: number; max?: number }> = {};
-    [...bloodReports].reverse().forEach(r => {
-      r.analysis.testResults.forEach((t: any) => {
-        const name = normaliseTestName(t.name ?? "");
-        if (!referenceRanges[name] && (t.referenceMin != null || t.referenceMax != null)) {
-          referenceRanges[name] = {
-            min: t.referenceMin != null ? parseFloat(t.referenceMin) : undefined,
-            max: t.referenceMax != null ? parseFloat(t.referenceMax) : undefined,
-          };
-        }
-      });
-    });
-
-    // Calculate trends for each test
+    // Calculate trends
     const trends = availableTests.map(test => {
-      const values = chartData
-        .map((d: any) => d[test])
-        .filter((v: any) => v !== undefined) as number[];
-
-      if (values.length < 2) return { name: test, trend: "stable" as const, change: 0, hasData: values.length > 0 };
-
+      const values = chartData.map((d: any) => d[test]).filter((v: any) => v !== undefined);
+      if (values.length < 2) return { name: test, trend: "stable", change: 0 };
       const last = values[values.length - 1];
       const prev = values[values.length - 2];
-      const change = prev !== 0 ? ((last - prev) / prev) * 100 : 0;
-
-      return {
-        name: test,
-        trend: change > TREND_THRESHOLD_PCT ? "up" as const : change < -TREND_THRESHOLD_PCT ? "down" as const : "stable" as const,
-        change: Math.round(change),
-        hasData: true,
-      };
+      // const change = ((last - prev) / prev) * 100;
+      const avg = values.reduce((a, b) => a + b, 0) / values.length;
+      const change = ((last - avg) / avg) * 100;
+      return { name: test, trend: change > 5 ? "up" : change < -5 ? "down" : "stable", change: Math.round(change) };
     });
 
-    return { chartData, availableTests, trends, referenceRanges };
+    return { chartData, availableTests, trends };
   }, [bloodReports]);
-
-  // Derived: which tests are actually shown on chart
-  const visibleTests = selectedTests
-    ? availableTests.filter(t => selectedTests.has(t))
-    : availableTests;
-
-  function toggleTest(name: string) {
-    setSelectedTests(prev => {
-      const current = prev ?? new Set(availableTests);
-      const next = new Set(current);
-      if (next.has(name)) {
-        if (next.size === 1) return current; // keep at least one
-        next.delete(name);
-      } else {
-        next.add(name);
-      }
-      return next;
-    });
-  }
 
   if (bloodReports.length < 1) {
     return (
       <div className="text-center py-16 bg-muted/40 rounded-xl">
         <Activity className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
         <p className="text-muted-foreground">Upload at least one blood report to see trends.</p>
-        <p className="text-xs text-muted-foreground mt-1">
-          Trends compare values across multiple blood reports over time.
-        </p>
+        <p className="text-xs text-muted-foreground mt-1">Trends compare values across multiple blood reports over time.</p>
       </div>
     );
   }
 
+    const getStatus = (test: string, value: number) => {
+    const ranges: any = {
+  Hemoglobin: { min: 11, max: 17 },
+  WBC: { min: 4500, max: 12000 },
+  Platelet: { min: 150000, max: 450000 },
+};
+
+    const range = ranges[test];
+    if (!range) return "normal";
+
+    if (value < range.min) return "low";
+    if (value > range.max) return "high";
+    return "normal";
+  };
+
   return (
     <div className="space-y-6">
-
-      {/* Trend Summary Cards — all tests, dynamic */}
+      {/* Trend Summary Cards */}
       {trends.length > 0 && (
-        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
-          {trends.filter(t => t.hasData).map((t, i) => (
-            <button
-              key={t.name}
-              onClick={() => toggleTest(t.name)}
-              className={`bg-card border rounded-xl p-4 shadow-card text-left transition-opacity ${
-                selectedTests && !selectedTests.has(t.name) ? "opacity-40" : "opacity-100"
-              }`}
-            >
-              <p className="text-xs text-muted-foreground mb-1 truncate">{t.name}</p>
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3">
+          {trends.map(t => (
+            <div key={t.name} className="bg-card border rounded-xl p-4 shadow-card">
+              <p className="text-xs text-muted-foreground mb-1">{t.name}</p>
               <div className="flex items-center gap-2">
                 {t.trend === "up" ? (
-                  <TrendingUp className="h-4 w-4 text-red-500 shrink-0" />
+                  <TrendingUp className="h-4 w-4 text-medical-danger" />
                 ) : t.trend === "down" ? (
-                  <TrendingDown className="h-4 w-4 text-green-600 shrink-0" />
+                  <TrendingDown className="h-4 w-4 text-secondary" />
                 ) : (
-                  <Minus className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <Minus className="h-4 w-4 text-muted-foreground" />
                 )}
-                <span
-                  className={`text-sm font-semibold ${
-                    t.trend === "up"
-                      ? "text-red-500"
-                      : t.trend === "down"
-                      ? "text-green-600"
-                      : "text-muted-foreground"
-                  }`}
-                >
+                <span className={`text-sm font-semibold ${t.trend === "up" ? "text-medical-danger" : t.trend === "down" ? "text-secondary" : "text-muted-foreground"}`}>
                   {t.change > 0 ? "+" : ""}{t.change}%
                 </span>
               </div>
               <p className="text-xs text-muted-foreground mt-1">
                 {t.trend === "up" ? "Increased" : t.trend === "down" ? "Decreased" : "Stable"} since last report
               </p>
-            </button>
+            </div>
           ))}
         </div>
       )}
 
-      {/* Filter hint when many tests */}
-      {availableTests.length > 6 && (
-        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Filter className="h-3.5 w-3.5" />
-          Tap a card above to toggle it on/off in the chart.
-        </p>
-      )}
-
-      {/* Chart — shows all visible tests */}
-      {chartData.length >= 1 && visibleTests.length > 0 && (
+      {/* Chart */}
+      {chartData.length > 1 && availableTests.length > 0 && (
         <div className="bg-card border rounded-xl p-6 shadow-card">
           <h3 className="font-semibold mb-4">Value Trends Over Time</h3>
-          <ResponsiveContainer width="100%" height={320}>
+          <ResponsiveContainer width="100%" height={300}>
             <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(210, 20%, 91%)" />
               <XAxis dataKey="date" tick={{ fontSize: 12 }} />
               <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip
-                formatter={(value: any, name: string) => {
-                  const range = referenceRanges[name];
-                  const suffix = range
-                    ? ` (ref: ${range.min ?? "?"}–${range.max ?? "?"})`
-                    : "";
-                  return [`${value}${suffix}`, name];
-                }}
-              />
+              <Tooltip />
               <Legend />
-              {visibleTests.map((test, i) => {
-                const range = referenceRanges[test];
-                return [
-                  <Line
-                    key={test}
-                    type="monotone"
-                    dataKey={test}
-                    stroke={generateColor(i)}
-                    strokeWidth={2}
-                    dot={{ r: 4 }}
-                    connectNulls // connect across missing data points
-                  />,
-                  range?.min != null && (
-                    <ReferenceLine
-                      key={`${test}-min`}
-                      y={range.min}
-                      stroke={generateColor(i)}
-                      strokeDasharray="4 4"
-                      strokeOpacity={0.4}
-                    />
-                  ),
-                  range?.max != null && (
-                    <ReferenceLine
-                      key={`${test}-max`}
-                      y={range.max}
-                      stroke={generateColor(i)}
-                      strokeDasharray="4 4"
-                      strokeOpacity={0.4}
-                    />
-                  ),
-                ].filter(Boolean);
-              })}
+              {availableTests.map((test, i) => (
+                <Line key={test} type="monotone" dataKey={test} stroke={CHART_COLORS[i % CHART_COLORS.length]} strokeWidth={2} dot={{ r: 4 }} />
+              ))}
             </LineChart>
           </ResponsiveContainer>
-          {chartData.length === 1 && (
-            <p className="text-xs text-muted-foreground mt-2 text-center">
-              Upload more reports to see trends over time.
-            </p>
-          )}
         </div>
       )}
     </div>
