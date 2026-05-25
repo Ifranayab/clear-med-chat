@@ -73,9 +73,10 @@ export default function TrendsView({ reports }: { reports: Report[] }) {
 
     const getStatus = (test: string, value: number) => {
     const ranges: any = {
-      Hemoglobin: { min: 16, max: 29 },
-      WBC: { min: 3578, max: 13452 },
-    };
+    Hemoglobin: { min: 11, max: 17 },
+    WBC: { min: 4500, max: 12000 },
+    Platelet: { min: 150000, max: 450000 },
+  };
 
     const range = ranges[test];
     if (!range) return "normal";
